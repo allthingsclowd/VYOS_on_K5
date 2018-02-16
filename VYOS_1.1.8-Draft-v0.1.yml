@@ -269,7 +269,7 @@ resources:
       name: 'server-a'
       size: 3
       volume_type: 'M1'
-      image : { get_param: k5_image_ubuntu1404 }
+      image : { get_param: k5_image_ubuntu1604 }
 
   # Build a server using the system volume defined above
   server_1_zone_a:
@@ -373,7 +373,7 @@ resources:
       flavor: { get_param: flavor_T1 }
       admin_user: vyos
       metadata: { 'fcx.autofailover': True }
-      block_device_mapping: [{'volume_size': '3', 'volume_id': {get_resource: server_3_sys_vol_zone_a}, 'delete_on_termination': True, 'device_name': '/dev/vda'}]
+      block_device_mapping: [{'volume_size': '2', 'volume_id': {get_resource: server_3_sys_vol_zone_a}, 'delete_on_termination': True, 'device_name': '/dev/vda'}]
       name: 'vyos-118'
       networks: 
         - port: { get_resource: server_3_EXT_port }
