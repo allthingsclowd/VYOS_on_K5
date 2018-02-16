@@ -1,4 +1,4 @@
-# Deploy a VYOS 1.1.8 Appliance in Fujitsu Clous Service K5
+# Deploy a VYOS 1.1.8 Appliance in Fujitsu Cloud Service K5
 VYOS 1.1.8 image pre-wrapped for use/import into Fujitsu Cloud Service K5 IaaS
 
 # Image Import Process - Using Fujitsu K5 IaaS Portal
