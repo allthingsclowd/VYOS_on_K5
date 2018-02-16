@@ -1,0 +1,228 @@
+heat_template_version: 2013-05-23
+# Author: Graham Land & Katie Conry
+# Date: 15/02/2018
+# Purpose:  Slipstream Initial Infrastructure Deployment 
+#           
+#
+# Twitter: @allthingsclowd
+# Blog: https://allthingscloud.eu
+#
+
+
+
+description: Slipstream Initial Infrastructure Deployment 
+
+# Input parameters
+parameters:
+  k5_image_ubuntu1404:
+    type: string
+    label: Image name or ID
+    description: Image to be used for compute instance
+    default: 'Ubuntu Server 14.04 LTS (English) 02'   
+  flavor_C2:
+    type: string
+    label: Flavor
+    description: C2 - 2vCPU & 4GB RAM
+    default: 'C-2'
+  flavor_C4:
+    type: string
+    label: Flavor
+    description: C4 - 4vCPU & 8GB RAM
+    default: 'C-4'
+  ssh_key_pair_zone_a:
+    type: string
+    label: Key name
+    description: Name of key-pair to be used for compute instance
+    default: 'LEMP-KP-AZ1'
+  availability_zone_a:
+    type: string
+    label: Availability Zone
+    description: Region AZ to use
+    default: 'uk-1a'
+  name_servers:
+    type: comma_delimited_list
+    label: Name servers for region
+    description: Region name server ip addresses
+    # uk-1 DNS
+    default: [62.60.39.9, 62.60.42.9, 62.60.39.10, 62.60.42.10]    
+    # de-1 DNS
+    # default: [185.149.225.9, 185.149.227.9, 185.149.225.10, 185.149.227.10]
+  my_ip:
+    type: string
+    label: The IP Address (CIDR format) of My PC on the Internet
+    description: PC Internet IP Address (CIDR format)
+    default: '86.159.8.77/32'
+
+# K5 Infrastructure resources to be built
+resources:
+
+  # Availability Zone A - Start
+
+  # Create the private management shared network
+  private_network_zone_a:
+    type: OS::Neutron::Net
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      name: 'slipstream-net'
+
+  # Create a new subnet on the second private network
+  private_subnet_zone_a:
+    type: OS::Neutron::Subnet
+    depends_on: private_network_zone_a
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      name: 'slipstream-subnet'
+      network_id: { get_resource: private_network_zone_a }
+      cidr: '192.168.122.0/24'
+      gateway_ip: '192.168.122.1'
+      dns_nameservers: { get_param: name_servers }
+
+  # Create a virtual router
+  virtual_router_zone_a:
+    type: OS::Neutron::Router
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      name: 'slipstream-rtr'
+
+  # Connect an interface on the private network's subnet to the router
+  virtual_router_zone_a_interface_1:
+    type: OS::Neutron::RouterInterface
+    depends_on: virtual_router_zone_a
+    properties:
+      router_id: { get_resource: virtual_router_zone_a }
+      subnet_id: { get_resource: private_subnet_zone_a }
+
+
+
+  # Availability Zone A - END
+
+
+  # Create security group
+  security_group_slipstream_zone_members:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Slipstream Zone Security Group
+      name: slipstream-zone-members
+      rules:
+       # allow inbound traffic from my remote PC
+        - remote_ip_prefix: { get_param: my_ip }
+          protocol: icmp
+          direction: ingress
+        - remote_ip_prefix: { get_param: my_ip }
+          protocol: tcp
+          direction: ingress
+          port_range_min: 22
+          port_range_max: 22
+       # allow inbound traffic from my remote PC
+        - remote_ip_prefix: '82.22.167.2/32'
+          protocol: icmp
+          direction: ingress
+        - remote_ip_prefix: '82.22.167.2/32'
+          protocol: tcp
+          direction: ingress
+          port_range_min: 22
+          port_range_max: 22
+
+  # Create security group
+  security_group_slipstream_zone:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Slipstream Zone Security Group
+      name: Slipstream-Zone-Rules
+      rules:
+       # allow all outbound traffic from servers in this security group
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: icmp
+          direction: egress
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          direction: egress
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: udp
+          direction: egress
+       # allow traffic between servers within the same cnets Zones
+        - remote_mode: remote_group_id
+          remote_group_id: { get_resource: security_group_slipstream_zone_members }
+          protocol: udp
+          direction: ingress
+        - remote_mode: remote_group_id
+          remote_group_id: { get_resource: security_group_slipstream_zone_members }
+          protocol: tcp
+          direction: ingress
+        - remote_mode: remote_group_id
+          remote_group_id: { get_resource: security_group_slipstream_zone_members }
+          protocol: icmp
+          direction: ingress     
+
+  # Create security group
+  security_group_edge_server:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Edge Security Group
+      name: Edge-Zone-Rules
+      rules:
+       # allow all outbound traffic from servers in this security group
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: icmp
+          direction: egress
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          direction: egress
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: udp
+          direction: egress
+       # allow all inbound traffic in this security group
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: icmp
+          direction: ingress
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          direction: ingress
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: udp
+          direction: ingress 
+
+# ZONE A
+
+
+  
+  # Server 1
+
+  # Create a new port for the server interface, assign an ip address and security group    
+  server_1_port:
+    type: OS::Neutron::Port
+    properties:
+      name: 'couch'
+      availability_zone: { get_param: availability_zone_a }
+      network_id: { get_resource: private_network_zone_a }
+      security_groups: [{ get_resource: security_group_slipstream_zone_members },{ get_resource: security_group_slipstream_zone }]
+      fixed_ips:
+        - subnet_id: { get_resource: private_subnet_zone_a }
+          ip_address: '192.168.122.10'
+
+  # Create a system volume for use with the server
+  server_1_sys_vol_zone_a:
+    type: OS::Cinder::Volume
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      name: 'Couch_System_Vol_1'
+      size: 20
+      volume_type: 'M1'
+      image : { get_param: k5_image_ubuntu1404 }
+
+  # Build a server using the system volume defined above
+  server_1_zone_a:
+    type: OS::Nova::Server
+    depends_on: server_1_sys_vol_zone_a
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      key_name: { get_param: ssh_key_pair_zone_a }
+      image: { get_param: k5_image_ubuntu1404 }
+      flavor: { get_param: flavor_C4 }
+      admin_user: ubuntu
+      metadata: { 'fcx.autofailover': True }
+      block_device_mapping: [{'volume_size': '20', 'volume_id': {get_resource: server_1_sys_vol_zone_a}, 'delete_on_termination': True, 'device_name': '/dev/vda'}]
+      name: 'couch'
+      networks: 
+        - port: { get_resource: server_1_port }
+ 
