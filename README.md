@@ -15,3 +15,4 @@ VYOS 1.1.8 image pre-wrapped for use/import into Fujitsu Cloud Service K5 IaaS
 # Image Deployment
 This is the same as any other image now on K5. As the VYOS is an appliance with typically at least 2 network interfaces I've included an OpenStack HEAT template in this repo that will deliver the following demonstration architecture for quick and easy testing
 
+![image](https://user-images.githubusercontent.com/9472095/36318162-ebe4e5d4-1336-11e8-9acb-e49470fe211d.png)
