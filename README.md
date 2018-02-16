@@ -19,5 +19,5 @@ This is the same as any other image now on K5. As the VYOS is an appliance with 
 
 https://gist.github.com/allthingsclowd/9fc434c5d5558c0900bfd09cc146b107
 
-### CAUTION: Please don't forget to configure __allowed_address_pairs__ once the network design is complete
+__CAUTION__: Please don't forget to configure **__allowed_address_pairs__** once the network design is complete
 See https://docs.openstack.org/dragonflow/latest/specs/allowed_address_pairs.html
