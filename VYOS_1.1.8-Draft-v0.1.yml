@@ -1,7 +1,7 @@
 heat_template_version: 2013-05-23
-# Author: Graham Land & Katie Conry
-# Date: 15/02/2018
-# Purpose:  Slipstream Initial Infrastructure Deployment 
+# Author: Graham Land
+# Date: 16/02/2018
+# Purpose:  Heat stack to deploy VYOS 1.1.8 appliance multi-nic image for evaluation
 #           
 #
 # Twitter: @allthingsclowd
@@ -10,25 +10,25 @@ heat_template_version: 2013-05-23
 
 
 
-description: Slipstream Initial Infrastructure Deployment 
+description: Deploy example VYOS 1.1.8 Dual Nic Appliance with two networks
 
 # Input parameters
 parameters:
-  k5_image_ubuntu1404:
+  k5_image_ubuntu1604:
     type: string
     label: Image name or ID
-    description: Image to be used for compute instance
-    default: 'Ubuntu Server 14.04 LTS (English) 02'   
-  flavor_C2:
+    description: Ubuntu 1604 LTS
+    default: 'Ubuntu Server 16.04 LTS (English) 01' 
+  k5_image_vyos118:
+    type: string
+    label: Image name or ID
+    description: VYOS 1.1.8 Dual Nic Appliance
+    default: 'vyos_1.1.8_eval'   
+  flavor_T1:
     type: string
     label: Flavor
     description: C2 - 2vCPU & 4GB RAM
-    default: 'C-2'
-  flavor_C4:
-    type: string
-    label: Flavor
-    description: C4 - 4vCPU & 8GB RAM
-    default: 'C-4'
+    default: 'T-1'
   ssh_key_pair_zone_a:
     type: string
     label: Key name
@@ -58,51 +58,83 @@ resources:
 
   # Availability Zone A - Start
 
-  # Create the private management shared network
-  private_network_zone_a:
+  # Create the vyos external network
+  vyos_external_network_zone_a:
     type: OS::Neutron::Net
     properties:
       availability_zone: { get_param: availability_zone_a }
-      name: 'slipstream-net'
+      name: 'vyos-external-net'
 
-  # Create a new subnet on the second private network
-  private_subnet_zone_a:
+  # Create a new subnet on the yvos external network
+  vyos_external_subnet_zone_a:
     type: OS::Neutron::Subnet
-    depends_on: private_network_zone_a
+    depends_on: vyos_external_network_zone_a
     properties:
       availability_zone: { get_param: availability_zone_a }
-      name: 'slipstream-subnet'
-      network_id: { get_resource: private_network_zone_a }
-      cidr: '192.168.122.0/24'
-      gateway_ip: '192.168.122.1'
+      name: 'vyos-external-subnet'
+      network_id: { get_resource: vyos_external_network_zone_a }
+      cidr: '192.168.100.0/24'
+      gateway_ip: '192.168.100.1'
       dns_nameservers: { get_param: name_servers }
 
-  # Create a virtual router
-  virtual_router_zone_a:
+  # Create a vyos external access router
+  vyos_external_router_zone_a:
     type: OS::Neutron::Router
     properties:
       availability_zone: { get_param: availability_zone_a }
-      name: 'slipstream-rtr'
+      name: 'vyos-external-rtr'
 
-  # Connect an interface on the private network's subnet to the router
-  virtual_router_zone_a_interface_1:
+  # Connect an interface on the vyos external subnet to the router
+  vyos_external_router_zone_a_interface_1:
     type: OS::Neutron::RouterInterface
-    depends_on: virtual_router_zone_a
+    depends_on: vyos_external_router_zone_a
     properties:
-      router_id: { get_resource: virtual_router_zone_a }
-      subnet_id: { get_resource: private_subnet_zone_a }
+      router_id: { get_resource: vyos_external_router_zone_a }
+      subnet_id: { get_resource: vyos_external_subnet_zone_a }
 
+  # Create the vyos internal network
+  vyos_internal_network_zone_a:
+    type: OS::Neutron::Net
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      name: 'vyos-internal-net'
 
+  # Create a new subnet on the yvos internal network
+  vyos_internal_subnet_zone_a:
+    type: OS::Neutron::Subnet
+    depends_on: vyos_internal_network_zone_a
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      name: 'vyos-internal-subnet'
+      network_id: { get_resource: vyos_internal_network_zone_a }
+      cidr: '172.10.100.0/24'
+      gateway_ip: '172.10.100.1'
+      dns_nameservers: { get_param: name_servers }
+
+  # Create a vyos internal access router
+  vyos_internal_router_zone_a:
+    type: OS::Neutron::Router
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      name: 'vyos-internal-rtr'
+
+  # Connect an interface on the vyos internal subnet to the router
+  vyos_internal_router_zone_a_interface_1:
+    type: OS::Neutron::RouterInterface
+    depends_on: vyos_internal_router_zone_a
+    properties:
+      router_id: { get_resource: vyos_internal_router_zone_a }
+      subnet_id: { get_resource: vyos_internal_subnet_zone_a }
 
   # Availability Zone A - END
 
 
   # Create security group
-  security_group_slipstream_zone_members:
+  security_group_external_zone_members:
     type: OS::Neutron::SecurityGroup
     properties:
-      description: Slipstream Zone Security Group
-      name: slipstream-zone-members
+      description: VYOS external Zone Security Group Members
+      name: external-zone-members
       rules:
        # allow inbound traffic from my remote PC
         - remote_ip_prefix: { get_param: my_ip }
@@ -124,11 +156,11 @@ resources:
           port_range_max: 22
 
   # Create security group
-  security_group_slipstream_zone:
+  security_group_external_zone:
     type: OS::Neutron::SecurityGroup
     properties:
-      description: Slipstream Zone Security Group
-      name: Slipstream-Zone-Rules
+      description: VYOS external Zone Security Group
+      name: YVOS-external-Zone-Rules
       rules:
        # allow all outbound traffic from servers in this security group
         - remote_ip_prefix: 0.0.0.0/0
@@ -142,24 +174,50 @@ resources:
           direction: egress
        # allow traffic between servers within the same cnets Zones
         - remote_mode: remote_group_id
-          remote_group_id: { get_resource: security_group_slipstream_zone_members }
+          remote_group_id: { get_resource: security_group_external_zone_members }
           protocol: udp
           direction: ingress
         - remote_mode: remote_group_id
-          remote_group_id: { get_resource: security_group_slipstream_zone_members }
+          remote_group_id: { get_resource: security_group_external_zone_members }
           protocol: tcp
           direction: ingress
         - remote_mode: remote_group_id
-          remote_group_id: { get_resource: security_group_slipstream_zone_members }
+          remote_group_id: { get_resource: security_group_external_zone_members }
           protocol: icmp
           direction: ingress     
 
   # Create security group
-  security_group_edge_server:
+  security_group_internal_zone_members:
     type: OS::Neutron::SecurityGroup
     properties:
-      description: Edge Security Group
-      name: Edge-Zone-Rules
+      description: VYOS internal Zone Security Group Members
+      name: internal-zone-members
+      rules:
+       # allow inbound traffic from my remote PC
+        - remote_ip_prefix: { get_param: my_ip }
+          protocol: icmp
+          direction: ingress
+        - remote_ip_prefix: { get_param: my_ip }
+          protocol: tcp
+          direction: ingress
+          port_range_min: 22
+          port_range_max: 22
+       # allow inbound traffic from my remote PC
+        - remote_ip_prefix: '82.22.167.2/32'
+          protocol: icmp
+          direction: ingress
+        - remote_ip_prefix: '82.22.167.2/32'
+          protocol: tcp
+          direction: ingress
+          port_range_min: 22
+          port_range_max: 22
+
+  # Create security group
+  security_group_internal_zone:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: VYOS internal Zone Security Group
+      name: YVOS-internal-Zone-Rules
       rules:
        # allow all outbound traffic from servers in this security group
         - remote_ip_prefix: 0.0.0.0/0
@@ -171,42 +229,45 @@ resources:
         - remote_ip_prefix: 0.0.0.0/0
           protocol: udp
           direction: egress
-       # allow all inbound traffic in this security group
-        - remote_ip_prefix: 0.0.0.0/0
-          protocol: icmp
+       # allow traffic between servers within the same cnets Zones
+        - remote_mode: remote_group_id
+          remote_group_id: { get_resource: security_group_internal_zone_members }
+          protocol: udp
           direction: ingress
-        - remote_ip_prefix: 0.0.0.0/0
+        - remote_mode: remote_group_id
+          remote_group_id: { get_resource: security_group_internal_zone_members }
           protocol: tcp
           direction: ingress
-        - remote_ip_prefix: 0.0.0.0/0
-          protocol: udp
+        - remote_mode: remote_group_id
+          remote_group_id: { get_resource: security_group_internal_zone_members }
+          protocol: icmp
           direction: ingress 
 
 # ZONE A
 
 
   
-  # Server 1
+  # Server A
 
   # Create a new port for the server interface, assign an ip address and security group    
   server_1_port:
     type: OS::Neutron::Port
     properties:
-      name: 'couch'
+      name: 'server-a'
       availability_zone: { get_param: availability_zone_a }
-      network_id: { get_resource: private_network_zone_a }
-      security_groups: [{ get_resource: security_group_slipstream_zone_members },{ get_resource: security_group_slipstream_zone }]
+      network_id: { get_resource: vyos_external_network_zone_a }
+      security_groups: [{ get_resource: security_group_external_zone_members },{ get_resource: security_group_external_zone }]
       fixed_ips:
-        - subnet_id: { get_resource: private_subnet_zone_a }
-          ip_address: '192.168.122.10'
+        - subnet_id: { get_resource: vyos_external_subnet_zone_a }
+          ip_address: '192.168.100.10'
 
   # Create a system volume for use with the server
   server_1_sys_vol_zone_a:
     type: OS::Cinder::Volume
     properties:
       availability_zone: { get_param: availability_zone_a }
-      name: 'Couch_System_Vol_1'
-      size: 20
+      name: 'server-a'
+      size: 3
       volume_type: 'M1'
       image : { get_param: k5_image_ubuntu1404 }
 
@@ -217,12 +278,103 @@ resources:
     properties:
       availability_zone: { get_param: availability_zone_a }
       key_name: { get_param: ssh_key_pair_zone_a }
-      image: { get_param: k5_image_ubuntu1404 }
-      flavor: { get_param: flavor_C4 }
+      image: { get_param: k5_image_ubuntu1604 }
+      flavor: { get_param: flavor_T1 }
       admin_user: ubuntu
       metadata: { 'fcx.autofailover': True }
-      block_device_mapping: [{'volume_size': '20', 'volume_id': {get_resource: server_1_sys_vol_zone_a}, 'delete_on_termination': True, 'device_name': '/dev/vda'}]
-      name: 'couch'
+      block_device_mapping: [{'volume_size': '3', 'volume_id': {get_resource: server_1_sys_vol_zone_a}, 'delete_on_termination': True, 'device_name': '/dev/vda'}]
+      name: 'server-a'
       networks: 
         - port: { get_resource: server_1_port }
- 
+
+  # Server B
+
+  # Create a new port for the server interface, assign an ip address and security group    
+  server_2_port:
+    type: OS::Neutron::Port
+    properties:
+      name: 'server-b'
+      availability_zone: { get_param: availability_zone_a }
+      network_id: { get_resource: vyos_internal_network_zone_a }
+      security_groups: [{ get_resource: security_group_internal_zone_members },{ get_resource: security_group_internal_zone }]
+      fixed_ips:
+        - subnet_id: { get_resource: vyos_internal_subnet_zone_a }
+          ip_address: '172.10.100.10'
+
+  # Create a system volume for use with the server
+  server_2_sys_vol_zone_a:
+    type: OS::Cinder::Volume
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      name: 'server-b'
+      size: 3
+      volume_type: 'M1'
+      image : { get_param: k5_image_ubuntu1604 }
+
+  # Build a server using the system volume defined above
+  server_2_zone_a:
+    type: OS::Nova::Server
+    depends_on: server_2_sys_vol_zone_a
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      key_name: { get_param: ssh_key_pair_zone_a }
+      image: { get_param: k5_image_ubuntu1604 }
+      flavor: { get_param: flavor_T1 }
+      admin_user: ubuntu
+      metadata: { 'fcx.autofailover': True }
+      block_device_mapping: [{'volume_size': '3', 'volume_id': {get_resource: server_2_sys_vol_zone_a}, 'delete_on_termination': True, 'device_name': '/dev/vda'}]
+      name: 'server-b'
+      networks: 
+        - port: { get_resource: server_2_port }
+
+  # VYOS Appliance
+
+  # Create a new port for the server interface, assign an ip address and security group    
+  server_3_INT_port:
+    type: OS::Neutron::Port
+    properties:
+      name: 'vyos-internal'
+      availability_zone: { get_param: availability_zone_a }
+      network_id: { get_resource: vyos_internal_network_zone_a }
+      security_groups: [{ get_resource: security_group_internal_zone_members },{ get_resource: security_group_internal_zone }]
+      fixed_ips:
+        - subnet_id: { get_resource: vyos_internal_subnet_zone_a }
+          ip_address: '172.10.100.253'
+  # Create a new port for the server interface, assign an ip address and security group    
+  server_3_EXT_port:
+    type: OS::Neutron::Port
+    properties:
+      name: 'yvos-external'
+      availability_zone: { get_param: availability_zone_a }
+      network_id: { get_resource: vyos_external_network_zone_a }
+      security_groups: [{ get_resource: security_group_external_zone_members },{ get_resource: security_group_external_zone }]
+      fixed_ips:
+        - subnet_id: { get_resource: vyos_external_subnet_zone_a }
+          ip_address: '192.168.100.253'
+
+  # Create a system volume for use with the server
+  server_3_sys_vol_zone_a:
+    type: OS::Cinder::Volume
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      name: 'vyos-vol'
+      size: 2
+      volume_type: 'M1'
+      image : { get_param: k5_image_vyos118 }
+
+  # Build a server using the system volume defined above
+  server_3_zone_a:
+    type: OS::Nova::Server
+    depends_on: server_3_sys_vol_zone_a
+    properties:
+      availability_zone: { get_param: availability_zone_a }
+      key_name: { get_param: ssh_key_pair_zone_a }
+      image: { get_param: k5_image_vyos118 }
+      flavor: { get_param: flavor_T1 }
+      admin_user: vyos
+      metadata: { 'fcx.autofailover': True }
+      block_device_mapping: [{'volume_size': '3', 'volume_id': {get_resource: server_3_sys_vol_zone_a}, 'delete_on_termination': True, 'device_name': '/dev/vda'}]
+      name: 'vyos-118'
+      networks: 
+        - port: { get_resource: server_3_EXT_port }
+        - port: { get_resource: server_3_INT_port }
